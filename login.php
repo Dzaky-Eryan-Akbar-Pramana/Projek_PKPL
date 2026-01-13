@@ -87,7 +87,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         <div class="alert alert-info" style="margin-top: 2rem;">
             <strong>Demo Admin:</strong><br>
             Email: admin@pierceflow.local<br>
-            Password: admin123
+            Password: adminkeren
         </div>
     </div>
 </div>

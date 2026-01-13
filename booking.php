@@ -40,104 +40,93 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         } else {
             // Cek konflik jadwal (tanggal dan waktu yang sama)
             $stmt = $conn->prepare("SELECT id FROM bookings WHERE date = ? AND time = ? AND status != 'cancelled' AND status != 'rejected'");
-            if ($stmt === false) {
-                error_log("Booking.php - SELECT prepare error: " . $conn->error);
-                $error = 'Database error: ' . htmlspecialchars($conn->error);
+            $stmt->bind_param("ss", $date, $time);
+            $stmt->execute();
+            $conflict_result = $stmt->get_result();
+            
+            if ($conflict_result->num_rows > 0) {
+                $error = 'Jadwal tersebut sudah dibooking! Silakan pilih waktu lain.';
             } else {
-                $stmt->bind_param("ss", $date, $time);
-                $stmt->execute();
-                $conflict_result = $stmt->get_result();
+                // Insert booking
+                $stmt = $conn->prepare("INSERT INTO bookings (user_id, service_id, service_type, date, time, address, status) VALUES (?, ?, ?, ?, ?, ?, 'pending')");
+                $stmt->bind_param("iissss", $user_id, $service_id, $service_type, $date, $time, $address);
                 
-                if ($conflict_result->num_rows > 0) {
-                    $error = 'Jadwal tersebut sudah dibooking! Silakan pilih waktu lain.';
-                } else {
-                    // Insert booking
-                    $stmt = $conn->prepare("INSERT INTO bookings (user_id, service_id, service_type, date, time, address, status) VALUES (?, ?, ?, ?, ?, ?, 'pending')");
-                    if ($stmt === false) {
-                        error_log("Booking.php - INSERT prepare error: " . $conn->error);
-                        error_log("Booking.php - Variables: user_id=$user_id, service_id=$service_id, service_type=$service_type, date=$date, time=$time");
-                        $error = 'Database error: ' . htmlspecialchars($conn->error);
-                    } else {
-                        $stmt->bind_param("iissss", $user_id, $service_id, $service_type, $date, $time, $address);
-                        
-                        if ($stmt->execute()) {
-                            $booking_id = $conn->insert_id; // Get the inserted booking ID
-                            
-                            // Get complete booking data for notifications
-                            $booking_query = "SELECT b.*, s.name as service_name, s.price, u.name as user_name, u.email, u.phone 
-                                            FROM bookings b 
-                                            JOIN services s ON b.service_id = s.id 
-                                            JOIN users u ON b.user_id = u.id 
-                                            WHERE b.id = ?";
-                            $stmt_booking = $conn->prepare($booking_query);
-                            $stmt_booking->bind_param("i", $booking_id);
-                            $stmt_booking->execute();
-                            $booking_data = $stmt_booking->get_result()->fetch_assoc();
-                            $stmt_booking->close();
-                            
-                            // Send notifications using production service
-                            require_once 'includes/production_whatsapp.php';
-                            require_once 'includes/notification_system_new.php';
-                            
-                            $whatsappService = new ProductionWhatsAppService();
-                            
-                            // Send WhatsApp notifications
-                            $whatsapp_user_result = $whatsappService->sendBookingNotification($booking_data['phone'], $booking_data);
-                            $whatsapp_admin_result = $whatsappService->sendAdminAlert('081234567890', $booking_data); // Admin number
-                            
-                            // Send email notifications (still in development mode)
-                            $emailNotification = new SimpleEmailNotification();
-                            $email_user_result = $emailNotification->sendBookingConfirmation($booking_data, $booking_data['email']);
-                            $email_admin_result = $emailNotification->sendAdminNotification($booking_data);
-                            
-                            $notification_results = [
-                                'email_user' => $email_user_result,
-                                'email_admin' => $email_admin_result,
-                                'whatsapp_user' => $whatsapp_user_result,
-                                'whatsapp_admin' => $whatsapp_admin_result
-                            ];
-                            
-                            // Success message with notification status
-                            $success = 'Booking berhasil! Status: Menunggu konfirmasi.';
-                            
-                            // Add notification status to success message  
-                            $whatsapp_status = $whatsappService->getStatus();
-                            
-                            if ($notification_results['email_user']) {
-                                $success .= '<br>📧 Email konfirmasi telah diproses untuk ' . $booking_data['email'] . ' (Log Mode)';
-                            }
-                            
-                            if ($notification_results['whatsapp_user']['success']) {
-                                if (isset($notification_results['whatsapp_user']['simulated']) && $notification_results['whatsapp_user']['simulated']) {
-                                    $success .= '<br>💬 WhatsApp konfirmasi telah diproses untuk ' . $booking_data['phone'] . ' (Mode Simulasi)';
-                                } else {
-                                    $success .= '<br>🚀 WhatsApp konfirmasi berhasil dikirim ke ' . $booking_data['phone'] . ' (Live)';
-                                }
-                            }
-                            
-                            $success .= '<br><br>🔔 <strong>Status Notifikasi:</strong><br>';
-                            $success .= '✅ Email: Development Mode (Logged)<br>';
-                            $success .= '✅ WhatsApp: ' . ($whatsapp_status['production_mode'] ? 'Production Mode (Live)' : 'Development Mode (Simulasi)') . '<br>';
-                            $success .= '✅ Provider: ' . ucfirst($whatsapp_status['active_provider']) . '<br>';
-                            
-                            if (!$whatsapp_status['production_mode']) {
-                                $success .= '<br><small>💡 <strong>Admin:</strong> Aktifkan Production Mode di <a href="admin_config_notifications.php" style="color: #8b5cf6;">Config Panel</a> untuk WhatsApp live</small>';
-                            }
-                            
-                            // Log notification results for admin
-                            error_log("Booking #$booking_id notifications sent - Email: " . 
-                                     ($notification_results['email_user'] ? 'SUCCESS' : 'FAILED') . 
-                                     ", WhatsApp: " . (($notification_results['whatsapp_user']['success'] ?? false) ? 'SUCCESS' : 'FAILED'));
-                            
-                            // Reset form
-                            $selected_service_id = 0;
-                        } else {
-                            $error = 'Terjadi kesalahan. Silakan coba lagi.';
-                        }
-                        $stmt->close();
+                if ($stmt->execute()) {
+                    $booking_id = $conn->insert_id; // Get the inserted booking ID
+                    
+                    // Get complete booking data for notifications
+                    $booking_query = "SELECT b.*, s.name as service_name, s.price, u.name as user_name, u.email, u.phone 
+                                    FROM bookings b 
+                                    JOIN services s ON b.service_id = s.id 
+                                    JOIN users u ON b.user_id = u.id 
+                                    WHERE b.id = ?";
+                    $stmt_booking = $conn->prepare($booking_query);
+                    $stmt_booking->bind_param("i", $booking_id);
+                    $stmt_booking->execute();
+                    $booking_data = $stmt_booking->get_result()->fetch_assoc();
+                    $stmt_booking->close();
+                    
+                    // Send notifications using production service
+                    require_once 'includes/production_whatsapp.php';
+                    require_once 'includes/notification_system_new.php';
+                    
+                    $whatsappService = new ProductionWhatsAppService();
+                    
+                    // Send WhatsApp notifications
+                    $whatsapp_user_result = $whatsappService->sendBookingNotification($booking_data['phone'], $booking_data);
+                    $whatsapp_admin_result = $whatsappService->sendAdminAlert('081234567890', $booking_data); // Admin number
+                    
+                    // Send email notifications (still in development mode)
+                    $emailNotification = new SimpleEmailNotification();
+                    $email_user_result = $emailNotification->sendBookingConfirmation($booking_data, $booking_data['email']);
+                    $email_admin_result = $emailNotification->sendAdminNotification($booking_data);
+                    
+                    $notification_results = [
+                        'email_user' => $email_user_result,
+                        'email_admin' => $email_admin_result,
+                        'whatsapp_user' => $whatsapp_user_result,
+                        'whatsapp_admin' => $whatsapp_admin_result
+                    ];
+                    
+                    // Success message with notification status
+                    $success = 'Booking berhasil! Status: Menunggu konfirmasi.';
+                    
+                    // Add notification status to success message  
+                    $whatsapp_status = $whatsappService->getStatus();
+                    
+                    if ($notification_results['email_user']) {
+                        $success .= '<br>📧 Email konfirmasi telah diproses untuk ' . $booking_data['email'] . ' (Log Mode)';
                     }
+                    
+                    if ($notification_results['whatsapp_user']['success']) {
+                        if (isset($notification_results['whatsapp_user']['simulated']) && $notification_results['whatsapp_user']['simulated']) {
+                            $success .= '<br>💬 WhatsApp konfirmasi telah diproses untuk ' . $booking_data['phone'] . ' (Mode Simulasi)';
+                        } else {
+                            $success .= '<br>🚀 WhatsApp konfirmasi berhasil dikirim ke ' . $booking_data['phone'] . ' (Live)';
+                        }
+                    }
+                    
+                    $success .= '<br><br>🔔 <strong>Status Notifikasi:</strong><br>';
+                    $success .= '✅ Email: Development Mode (Logged)<br>';
+                    $success .= '✅ WhatsApp: ' . ($whatsapp_status['production_mode'] ? 'Production Mode (Live)' : 'Development Mode (Simulasi)') . '<br>';
+                    $success .= '✅ Provider: ' . ucfirst($whatsapp_status['active_provider']) . '<br>';
+                    
+                    if (!$whatsapp_status['production_mode']) {
+                        $success .= '<br><small>💡 <strong>Admin:</strong> Aktifkan Production Mode di <a href="admin_config_notifications.php" style="color: #8b5cf6;">Config Panel</a> untuk WhatsApp live</small>';
+                    }
+                    
+                    // Log notification results for admin
+                    error_log("Booking #$booking_id notifications sent - Email: " . 
+                             ($notification_results['email_user'] ? 'SUCCESS' : 'FAILED') . 
+                             ", WhatsApp: " . (($notification_results['whatsapp_user']['success'] ?? false) ? 'SUCCESS' : 'FAILED'));
+                    
+                    // Reset form
+                    $selected_service_id = 0;
+                } else {
+                    $error = 'Terjadi kesalahan. Silakan coba lagi.';
                 }
             }
+            $stmt->close();
         }
     }
 }
@@ -175,9 +164,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         <?php if ($error): ?>
             <div style="background: linear-gradient(135deg, #ef4444, #dc2626); color: white; padding: 1rem 1.5rem; border-radius: 12px; margin-bottom: 2rem; font-weight: 500; box-shadow: 0 4px 15px rgba(239, 68, 68, 0.3);">
                 ❌ <?= htmlspecialchars($error) ?>
-                <?php if (strpos($error, 'Database error') !== false): ?>
-                    <br><small style="opacity: 0.9;">💡 <strong>Tip:</strong> Jalankan <a href="test_database.php" style="color: #fca5a5; text-decoration: underline;">test_database.php</a> untuk cek koneksi, atau <a href="setup_database.php" style="color: #fca5a5; text-decoration: underline;">setup_database.php</a> untuk setup database.</small>
-                <?php endif; ?>
             </div>
         <?php endif; ?>
         
@@ -185,7 +171,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             <div style="background: linear-gradient(135deg, #10b981, #059669); color: white; padding: 2rem; border-radius: 20px; margin-bottom: 2rem; text-align: center; box-shadow: 0 8px 25px rgba(16, 185, 129, 0.3);">
                 <div style="font-size: 3rem; margin-bottom: 1rem;">🎉</div>
                 <div style="font-size: 1.2rem; font-weight: 600; margin-bottom: 1rem;">
-                    ✅ <?= htmlspecialchars($success) ?>
+                    ✅ <?= $success ?>
                 </div>
                 <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; margin-top: 1.5rem;">
                     <a href="dashboard.php" style="
