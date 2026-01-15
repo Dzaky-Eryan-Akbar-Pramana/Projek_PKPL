@@ -2,7 +2,7 @@
 require_once 'includes/header.php';
 
 // Redirect admin ke dashboard admin
-if (isset($_SESSION['user_id']) && $_SESSION['role'] == 'admin') {
+if (isset($_SESSION['user_id']) && isset($_SESSION['role']) && $_SESSION['role'] == 'admin') {
     header('Location: admin.php');
     exit;
 }

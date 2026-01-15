@@ -118,3 +118,18 @@ Booking Anda telah berhasil dikonfirmasi:...
 🆔 ID: #8
 👤 Customer: Dzaky
 📱 Phone: 0281...
+[2026-01-15 12:15:38] [INFO] Attempting to send booking_notification to 6228130917203
+[2026-01-15 12:15:38] [INFO] SIMULATION MODE: booking_notification to 6228130917203
+[2026-01-15 12:15:38] [INFO] Message content: 🎉 *BOOKING CONFIRMED - PIERCEFLOW*
+
+Halo *Dzaky*! 👋
+
+Booking Anda telah berhasil dikonfirmasi:...
+[2026-01-15 12:15:38] [INFO] Attempting to send admin_alert to 6281234567890
+[2026-01-15 12:15:38] [INFO] SIMULATION MODE: admin_alert to 6281234567890
+[2026-01-15 12:15:38] [INFO] Message content: 🔔 *BOOKING BARU MASUK!*
+
+📋 *Detail Booking:*
+🆔 ID: #9
+👤 Customer: Dzaky
+📱 Phone: 0281...
